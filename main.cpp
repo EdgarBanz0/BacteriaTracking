@@ -166,30 +166,40 @@ Mat remove_objects(Mat& img, double min_area, double max_area){
 */
 void compare_frames(vector<vector<Point2f>>& move_mc, vector<Point2f>& new_mc, vector<array<int,2>>& lifetime){
     
-    int matched [move_mc.size()] = {0}; //array to store matched bacteria IDs
+    int move_size = move_mc.size();
+    vector<int> matched; //vector to store matched bacteria
     bool match;
+
+    //initialize matched vector
+    matched.resize(move_size, 0);
 
     //check for new objects
     for (size_t i = 0; i < new_mc.size(); i++){
         match = false;
+        //cout << "i: " << i <<endl;
         for (size_t j = 0; j < move_mc.size(); j++){  
             //if distance between centers is less than 10 pixels, consider it as the same object
+            
             if (norm(new_mc[i] - move_mc[j].back()) < dist_threshold){
                 match = true;
                 //add displacement
                 move_mc[j].push_back(new_mc[i]);
-                matched[j] = 1;
+                if(move_size >= j)
+                    matched[j] = 1;
                 break;
             }
         }
         
         //add new mass center
-        if (!match)
+        if (!match){
             move_mc.push_back(vector<Point2f>{new_mc[i]});
+            matched.push_back(0); //mark as unmatched
+        }
+            
     }
-
+    
     //update lifetime vector
-    int move_size = move_mc.size();
+    move_size = move_mc.size();
     for(int j = 0; j < move_size; j++){
         match = false;
         for(size_t k = 0; k < lifetime.size(); k++){
@@ -290,10 +300,10 @@ int main(int argc, char** argv ){
     video_files = getFilesPath(video_dir, argv[1]);
 
     //set total number of videos 
-    if(video_index > 0 && video_index < video_files.size()){
-        capture.open(video_files[video_index-1]);
+    if(video_index >= 0 && video_index < video_files.size()){
+        capture.open(video_files[video_index]);
         maxvideos = 1;
-    }else if(video_index == 0){
+    }else if(video_index == -1){
         capture.open(video_files[0]);
         maxvideos = video_files.size();
     }else{
@@ -356,6 +366,7 @@ int main(int argc, char** argv ){
             
             //----Match elements between frames
             compare_frames(move_mc, new_mc, lifetime);
+            
             //----draw elements in frame
             drawElements(img_input, move_mc);
 
@@ -380,6 +391,10 @@ int main(int argc, char** argv ){
             avg_area = 100;
             max_detected = 0;
             sum_detected = 0;
+            if (move_mc.size() > 0)
+                move_mc.clear();
+            if (lifetime.size() > 0)
+                lifetime.clear();
         }      
     }
 
