@@ -1,0 +1,3 @@
+/home/edgarbanzo/Programs/CV/BacteriaTracking/CMakeFiles/BacteriaTracking.dir
+/home/edgarbanzo/Programs/CV/BacteriaTracking/CMakeFiles/edit_cache.dir
+/home/edgarbanzo/Programs/CV/BacteriaTracking/CMakeFiles/rebuild_cache.dir
