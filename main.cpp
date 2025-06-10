@@ -251,10 +251,12 @@ void compare_frames(vector<vector<Point2f>>& move_mc, vector<Point2f>& new_mc, v
     Draw ellipses and centers of mass on the image
     Parameters:
         img - current frame
-        mass_centers - vector of mass centers
+        move_mc - vector of displaced mass centers
+        lifetime - vector of lifetimes for each mass center [0]-lifetime [1]-visibility
+        show_tracks - flag to show tracks of mass centers
 
 */
-void drawElements(Mat& img, vector<vector<Point2f>> move_mc, vector<array<int,2>> lifetime){
+void drawElements(Mat& img, vector<vector<Point2f>> move_mc, vector<array<int,2>> lifetime, bool show_tracks){
     
     Point2f prev_center = Point2f(0, 0); //previous center of mass
     Point2f coord;
@@ -279,14 +281,17 @@ void drawElements(Mat& img, vector<vector<Point2f>> move_mc, vector<array<int,2>
         prev_center = move_mc[i].back();
     }
 
-    /*/draw displacement of mass centers
-    for (size_t i = 0; i < move_mc.size(); i++){
-        for (size_t j = 0; j < move_mc[i].size() - 1; j++){
-            //draw line between old and new mass centers
-            if (j > 0)
-                line(img, move_mc[i][j-1], move_mc[i][j], Scalar(255, 0, 0), 2);
+    //draw displacement of mass centers
+    if(show_tracks){
+        for (size_t i = 0; i < move_mc.size(); i++){
+            for (size_t j = 0; j < move_mc[i].size() - 1; j++){
+                //draw line between old and new mass centers
+                if (j > 0)
+                    line(img, move_mc[i][j-1], move_mc[i][j], Scalar(255, 0, 0), 2);
+            }
         }
-    }*/
+    }
+    
 
     //get visible mass centers
     int visible_count = 0;
@@ -304,17 +309,24 @@ void drawElements(Mat& img, vector<vector<Point2f>> move_mc, vector<array<int,2>
 
 
 int main(int argc, char** argv ){
-    if ( argc != 3 )
+    if ( argc != 5 )
     {
-        printf("Arguments: 1. Video path 2. Video index (0 for all)\n");
+        printf("Arguments:\n 1. Video path 2. Video index (-1 for all)\n 3. Wait mode (0 continuous 1 wait)\n 4. show tracks (0 false 1 true)\n");
         return -1;
     }
 
-    int frame_count = 0;
-    int maxvideos;
+    //initialize video capture
     vector<string> video_files;
     VideoCapture capture;
     int video_index = stoi(argv[2]);
+    int frame_count = 0;
+    int maxvideos;
+    bool wait_mode = (stoi(argv[3]) == 1);
+    bool show_tracks = (stoi(argv[4]) == 1); //show tracks
+    if (wait_mode)
+        cout << "Play mode: wait. Press any key for next frame." << endl;
+    else
+        cout << "Continuous mode enabled." << endl;
 
     //read video files
     DIR *video_dir = opendir(argv[1]);
@@ -393,12 +405,15 @@ int main(int argc, char** argv ){
             compare_frames(move_mc, new_mc, lifetime);
             
             //----draw elements in frame
-            drawElements(img_input, move_mc, lifetime);
+            drawElements(img_input, move_mc, lifetime, show_tracks);
 
             //Update counting statistics
             updateStats(areas, move_mc, lifetime, max_detected, sum_detected);
 
-            key = waitKey(5);
+            if(wait_mode)
+                key = waitKey(0);
+            else
+                key = waitKey(5);
             if(key == 'n')
                 break;
             frame_count++;
