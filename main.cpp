@@ -15,7 +15,7 @@ using namespace cv;
 using namespace std;
 
 //lifetime for lost bacteria
-const int frame_lifetime = 10;
+const int frame_lifetime = 5;
 //average area of bacteria to assign IDs
 int avg_area = 100;
 //distance threshold to consider two objects as the same
@@ -162,13 +162,16 @@ Mat remove_objects(Mat& img, double min_area, double max_area){
     Parameters:
         move_mc - vector of displaced mass centers
         new_mc - vector of new mass centers
-        lifetime - vector of lifetimes for each mass center [0]-index [1]-lifetime
+        lifetime - vector of lifetimes for each mass center [0]-index [1]-lifetime [2]-visibility
 */
-void compare_frames(vector<vector<Point2f>>& move_mc, vector<Point2f>& new_mc, vector<array<int,2>>& lifetime){
+void compare_frames(vector<vector<Point2f>>& move_mc, vector<Point2f>& new_mc, vector<array<int,3>>& lifetime){
     
     int move_size = move_mc.size();
     vector<int> matched; //vector to store matched bacteria
     bool match;
+    int match_repeat = -1; //counter for repeated matches
+    vector<vector<Point2f>> move_temp;
+    vector<array<int,3>> lifetime_temp;
 
     //initialize matched vector
     matched.resize(move_size, 0);
@@ -176,16 +179,17 @@ void compare_frames(vector<vector<Point2f>>& move_mc, vector<Point2f>& new_mc, v
     //check for new objects
     for (size_t i = 0; i < new_mc.size(); i++){
         match = false;
-        //cout << "i: " << i <<endl;
         for (size_t j = 0; j < move_mc.size(); j++){  
-            //if distance between centers is less than 10 pixels, consider it as the same object
-            
+            //if distance between centers is close enough, consider it as the same previous object
             if (norm(new_mc[i] - move_mc[j].back()) < dist_threshold){
                 match = true;
                 //add displacement
-                move_mc[j].push_back(new_mc[i]);
-                if(move_size >= j)
-                    matched[j] = 1;
+                if (matched[j] == 0){
+                    move_mc[j].push_back(new_mc[i]);
+                    matched[j] = 1; //mark as matched
+                }else{
+                    match_repeat = j+1;
+                }
                 break;
             }
         }
@@ -193,10 +197,17 @@ void compare_frames(vector<vector<Point2f>>& move_mc, vector<Point2f>& new_mc, v
         //add new mass center
         if (!match){
             move_mc.push_back(vector<Point2f>{new_mc[i]});
-            matched.push_back(0); //mark as unmatched
+            matched.push_back(1); //mark as matched
         }
-            
+
+        if(match_repeat > 0){
+            move_mc.insert(move_mc.begin() + match_repeat ,vector<Point2f>{new_mc[i]});
+            matched.push_back(1); //mark as matched
+            match_repeat = -1; //reset index
+        }
     }
+
+    
     
     //update lifetime vector
     move_size = move_mc.size();
@@ -206,11 +217,13 @@ void compare_frames(vector<vector<Point2f>>& move_mc, vector<Point2f>& new_mc, v
             
             if (matched[j] == 1 && j == lifetime[k][0]){
                 lifetime[k][1] = 0;//reset lifetime for matched bacteria
+                lifetime[k][2] = 1;//mark as visible
                 match = true;
                 break;
             }else if (matched[j] == 0 && j == lifetime[k][0]){
                 //increment lifetime for unmatched bacteria
                 lifetime[k][1]++;
+                lifetime[k][2] = 0; //mark as not visible
                 //if lifetime exceeds threshold, remove bacteria
                 if (lifetime[k][1] > frame_lifetime){
                     move_mc.erase(move_mc.begin() + j);
@@ -221,8 +234,8 @@ void compare_frames(vector<vector<Point2f>>& move_mc, vector<Point2f>& new_mc, v
             }
         }
         if (!match){
-            //add new bacteria to lifetime vector
-            lifetime.push_back({j, 0});
+            //add new visible bacteria to lifetime vector
+            lifetime.push_back({j, 0, 1});
         }
     }
 
@@ -238,42 +251,44 @@ void compare_frames(vector<vector<Point2f>>& move_mc, vector<Point2f>& new_mc, v
         mass_centers - vector of mass centers
 
 */
-void drawElements(Mat& img, vector<vector<Point2f>> move_mc){
+void drawElements(Mat& img, vector<vector<Point2f>> move_mc, vector<array<int,3>> lifetime){
     
-    Point2f prev_center = Point2f(0,0);
-    Point2f label;
-    int same_mass = 0; //counter for shared mass centers
+    Point2f prev_center = Point2f(0, 0); //previous center of mass
+    Point2f coord;
+    int same_mass; //counter for shared mass centers
 
     for (size_t i = 0; i < move_mc.size(); i++){
-        //draw center of mass
+        //if(lifetime[i][2] == 0) //if not visible, skip
+        //    continue;
+        //draw center of mass if visible
         circle(img, move_mc[i].back(), 3, Scalar(0, 0, 255), -1);
-        //draw label
         
         //write ID for shared mass centers 
-        if(i > 0 && prev_center ==  move_mc[i].back()){
-            //displace label to avoid overlap
-            label = Point2f(move_mc[i].back().x + (same_mass)*5, move_mc[i].back().y + 7);
-            putText(img, "*", label, FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0));
+        if(prev_center == move_mc[i].back()){
+            coord = Point2f(move_mc[i].back().x + same_mass*5, move_mc[i].back().y + 7);
+            putText(img, "*", coord, FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0));
             same_mass++;
         }else{
             same_mass = 0;
-            putText(img, to_string(i+1), move_mc[i].back(), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0));
+            putText(img, to_string(lifetime[i][0]), move_mc[i].back(), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 255, 0));
         }
+
         prev_center = move_mc[i].back();
     }
 
-    //draw displacement of mass centers
+    /*/draw displacement of mass centers
     for (size_t i = 0; i < move_mc.size(); i++){
         for (size_t j = 0; j < move_mc[i].size() - 1; j++){
             //draw line between old and new mass centers
             if (j > 0)
                 line(img, move_mc[i][j-1], move_mc[i][j], Scalar(255, 0, 0), 2);
         }
-    }
+    }*/
 
     //draw detected bacteria count
     putText(img, to_string(move_mc.size()) + " bacterias", Point(10,20), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(255, 255, 255), 2);
-    imshow("Labeled Bacteria",img);  
+    imshow("Labeled Bacteria",img);
+
 }
 
 
@@ -327,7 +342,7 @@ int main(int argc, char** argv ){
     int max_area = 10000;   //maximum area of contour to consider as bacteria
 
     Mat img_input, gray, bkg_mask, img_clean;       //frame image processes
-    vector<array<int,2>> lifetime;                        // missed elements lifetime
+    vector<array<int,3>> lifetime;                        // missed elements lifetime
     vector<Point2f> new_mc;                         //center of mass for detected bacterias
     vector<vector<Point2f>> move_mc;                //displacement of mass centers
     vector<double> areas;                           //areas for detected elements                   
@@ -368,7 +383,7 @@ int main(int argc, char** argv ){
             compare_frames(move_mc, new_mc, lifetime);
             
             //----draw elements in frame
-            drawElements(img_input, move_mc);
+            drawElements(img_input, move_mc, lifetime);
 
             //Update counting statistics
             updateStats(areas, move_mc, max_detected, sum_detected);
