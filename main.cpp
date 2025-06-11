@@ -14,12 +14,16 @@
 using namespace cv;
 using namespace std;
 
+//time for each frame
+const float frame_time = 0.033; //(s), 30 FPS
 //lifetime for lost bacteria
 const int frame_lifetime = 5;
-//average area of bacteria to assign IDs
+//average area of bacteria
 int avg_area = 100;
 //distance threshold to consider two objects as the same
 const int dist_threshold = 10;
+//speed acumulator
+vector<double> speeds;
 
 // Read each video file in the given directory 
 vector<string> getFilesPath(DIR *video_directory, string dir){
@@ -124,37 +128,47 @@ void computeMassCenter(Mat& img,vector<Point2f>& mass_centers, vector<double>& a
 
 
 /*
-    Delete objects from image based on contour area
+    Compute speed of bacteria by looking at mass center history,
+    updating global speed average
     Parameters:
-        img - current frame
-        min_area - minimum area of countour to consider as bacteria
-        max_area - maximum area of countour to consider as bacteria
-    Returns:
-        new_img - image with removed objects
-*/
-Mat remove_objects(Mat& img, double min_area, double max_area){
-    //find all objects
-    Mat img_labels, img_stats, img_centroids;
-    int area;
-    int nlabels = connectedComponentsWithStats(img,img_labels,img_stats,img_centroids);
-    
-    Mat new_img = img.clone();
+        move_mc - vector of displaced mass centers
+        indices - vector of mass center indices to compute
+        all - flag to compute speed for all mass centers in move_mc
 
-    //clean each object (excluding background: label 0)
-    for (int i = 1; i < nlabels; i++){
-        //get object area
-        area = img_stats.at<int>(i, CC_STAT_AREA);
-        //remove object if area is out of bounds
-        if (area < min_area || area > max_area){
-            //get object bounding box
-            Rect r = Rect(img_stats.at<int>(i, CC_STAT_LEFT), img_stats.at<int>(i, CC_STAT_TOP),
-                          img_stats.at<int>(i, CC_STAT_WIDTH), img_stats.at<int>(i, CC_STAT_HEIGHT));
-            //remove object from image
-            new_img(r).setTo(Scalar(0,0,0));
-        }
-    }
+*/
+void computeSpeed(vector<vector<Point2f>>& move_mc, vector<int> indices = {}, bool all = false){
+    //if index is empty, compute speed for all mass centers
+    size_t n_size;
+    if(all)
+        n_size = move_mc.size();
+    else
+        n_size = indices.size();
     
-    return new_img;
+    double d, avg_speed;
+    size_t index;
+
+    for (size_t i = 0; i < n_size; i++){
+        if(all)
+            index = i;
+        else
+            index = indices[i];
+
+        //if there is more than one mass center, compute speed
+        avg_speed = 0;
+        for(size_t j = 1; j < move_mc[index].size(); j++){
+            //get distance
+            d = norm(move_mc[index][j] - move_mc[index][j-1]) * 0.170; //convert to um (1 pixel = 0.17 um)
+            //get speed
+            avg_speed += d / frame_time; //pixels per second
+        }
+
+        //add speed to global vector
+        if (move_mc[index].size() > 1){
+            avg_speed /= (move_mc[index].size() - 1); //average speed
+            speeds.push_back(avg_speed);
+        }
+
+    }
 }
 
 
@@ -224,9 +238,15 @@ void compare_frames(vector<vector<Point2f>>& move_mc, vector<Point2f>& new_mc, v
         }
     }
 
+    //compute speed for indices about to remove
+    if(remove_indices.size() > 0){
+        computeSpeed(move_mc, remove_indices);
+    }
+
     //remove indices from move_mc and lifetime
+    int index;
     for (int i = remove_indices.size() - 1; i >= 0; i--) {
-        int index = remove_indices[i];
+        index = remove_indices[i];
         if (index < move_mc.size()) {
             move_mc.erase(move_mc.begin() + index);
         }
@@ -413,10 +433,18 @@ int main(int argc, char** argv ){
             frame_count++;
         }
 
+        //-----Compute speed for all mass centers
+        computeSpeed(move_mc, {}, true);
+        double avg_speed = 0;
+        for(size_t j = 0; j < speeds.size(); j++){
+            avg_speed += speeds[j];
+        }
+
         printf("-----------RESULTS------------\n");
-        printf("|       Frames =    %d\n", frame_count);
-        printf("| Max detected =    %d\n", max_detected);
-        printf("|Avg. detected =    %d\n", sum_detected / frame_count);
+        printf("|               Frames =    %d\n", frame_count);
+        printf("|         Max detected =    %d\n", max_detected);
+        printf("|        Avg. detected =    %d\n", sum_detected / frame_count);
+        printf("| Avg. speed (pixel/s) =    %.2f\n", avg_speed / speeds.size());
 
         //load next video
         if(maxvideos > 1 && i < maxvideos){
