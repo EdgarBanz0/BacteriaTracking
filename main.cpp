@@ -64,7 +64,7 @@ void updateStats(vector<double> areas, vector<vector<Point2f>> move_mc, vector<a
     if(areas.size() > 0){
         new_avg /= areas.size();
         //update global average area
-        avg_area = new_avg;
+        avg_area =  (avg_area + new_avg)/2;
     }
 
     //get visible mass centers
@@ -369,6 +369,8 @@ int main(int argc, char** argv ){
     vector<vector<Point2f>> move_mc;                //displacement of mass centers
     vector<double> areas;                           //areas for detected elements                   
     Mat kernel = getStructuringElement(MORPH_ELLIPSE, Size(11, 11)); //kernel for morphological operations
+    Mat kernel2 = getStructuringElement(MORPH_ELLIPSE, Size(3, 3)); //kernel for morphological operations
+
     int max_detected = 0;   //maximum number of detected elements
     int sum_detected = 0;   //total number of detected elements
     auto key = 0;
@@ -393,12 +395,12 @@ int main(int argc, char** argv ){
             
             //----Mass characterization
             //filter bacteria by area
-            img_clean = remove_objects(bkg_mask, min_area, max_area);
+            //img_clean = remove_objects(bkg_mask, min_area, max_area);
+            morphologyEx(bkg_mask, img_clean,MORPH_OPEN,kernel2, Point(-1,-1), 1);
             //fill remaining elements
             morphologyEx(img_clean, img_clean,MORPH_CLOSE,kernel, Point(-1,-1), 1);
-            //2nd filter after possibly connect small elements
-            img_clean = remove_objects(img_clean, min_area, max_area);
-            imshow("Closed Mask", img_clean);
+            imshow("Close Filter", img_clean);
+            //find contours and fit ellipses
             ellipse_fitting(img_clean, new_mc, areas);
             
             //----Match elements between frames
@@ -435,6 +437,10 @@ int main(int argc, char** argv ){
                 move_mc.clear();
             if (lifetime.size() > 0)
                 lifetime.clear();
+            if (new_mc.size() > 0)
+                new_mc.clear();
+            if (areas.size() > 0)
+                areas.clear();
         }      
     }
 
