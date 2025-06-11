@@ -84,15 +84,14 @@ void updateStats(vector<double> areas, vector<vector<Point2f>> move_mc, vector<a
 
 
 /*
-    Partial Contour extraction for ellipse fitting
+    Compute mass centers of detected contours
     Parameters:
         img - current frame
         mass_centers - vector to store computed centers of mass for each contour
         areas - vector to store area of each contour
 */
-void ellipse_fitting(Mat& img,vector<Point2f>& mass_centers, vector<double>& areas){
+void computeMassCenter(Mat& img,vector<Point2f>& mass_centers, vector<double>& areas){
     vector<vector<Point>> contours;
-    RotatedRect ellipse;
     Point2f center;
 
     //find full defined contours
@@ -102,28 +101,23 @@ void ellipse_fitting(Mat& img,vector<Point2f>& mass_centers, vector<double>& are
     int n_size;
     areas.clear();
     
-    //filter contours by area and fit ellipse
+    //Get area of each contour and compute center of mass
     for (size_t i = 0; i < contours.size(); i++){
         areas.push_back(contourArea(contours[i]));
 
-        //check for enough points to fit an ellipse
-        if (contours[i].size() >= 5) {
-            ellipse = fitEllipse(contours[i]);
-            //compute center of mass
-            Moments mu = moments(contours[i]);
+        //compute center of mass
+        Moments mu = moments(contours[i]);
 
-            //add center of mass n times according to area
-            n_size = areas[i] / (avg_area*1.5);
-            if (n_size < 1)
-                n_size = 1; //minimum ID count is 1
+        //add center of mass n times according to area
+        n_size = areas[i] / (avg_area*1.5);
+        if (n_size < 1)
+            n_size = 1; //minimum ID count is 1
 
-            for (int j = 0; j < n_size; j++){
-                if (mu.m00 != 0){
-                    center = Point2f(mu.m10/mu.m00, mu.m01/mu.m00);
-                    mass_centers.push_back(center);
-                }else
-                    mass_centers.push_back(ellipse.center);
-            }
+        for (int j = 0; j < n_size; j++){
+            if (mu.m00 != 0){
+                center = Point2f(mu.m10/mu.m00, mu.m01/mu.m00);
+                mass_centers.push_back(center);
+            }  
         }
     }
 }
@@ -162,7 +156,6 @@ Mat remove_objects(Mat& img, double min_area, double max_area){
     
     return new_img;
 }
-
 
 
 /*
@@ -355,7 +348,7 @@ int main(int argc, char** argv ){
 
     //initialize background subtractor
     int history = 200; //frames to build background
-    double dist_threshold = 12.0;//100.0; //distance between pixel and background model
+    double dist_threshold = 12.0; //distance between pixel and background 
     Ptr<BackgroundSubtractor> pBackSub = createBackgroundSubtractorMOG2(history,dist_threshold,false);
 
 
@@ -395,21 +388,20 @@ int main(int argc, char** argv ){
             
             //----Mass characterization
             //filter bacteria by area
-            //img_clean = remove_objects(bkg_mask, min_area, max_area);
             morphologyEx(bkg_mask, img_clean,MORPH_OPEN,kernel2, Point(-1,-1), 1);
             //fill remaining elements
             morphologyEx(img_clean, img_clean,MORPH_CLOSE,kernel, Point(-1,-1), 1);
             imshow("Close Filter", img_clean);
-            //find contours and fit ellipses
-            ellipse_fitting(img_clean, new_mc, areas);
+            //find contours and mass centers
+            computeMassCenter(img_clean, new_mc, areas);
             
             //----Match elements between frames
             compare_frames(move_mc, new_mc, lifetime);
             
-            //----draw elements in frame
+            //----Draw elements in frame
             drawElements(img_input, move_mc, lifetime, show_tracks);
 
-            //Update counting statistics
+            //----Update counting statistics
             updateStats(areas, move_mc, lifetime, max_detected, sum_detected);
 
             if(wait_mode)
