@@ -79,8 +79,8 @@ void updateStats(vector<double> areas, vector<vector<Point2f>> move_mc, vector<a
     }
 
     //update maximum detected elements
-    if (move_mc.size() > max_detected)
-        max_detected = visible_count;
+    if (areas.size() > max_detected)
+        max_detected = areas.size();
     
     //update average detected elements
     sum_detected += visible_count;
@@ -444,7 +444,7 @@ int main(int argc, char** argv ){
         printf("|               Frames =    %d\n", frame_count);
         printf("|         Max detected =    %d\n", max_detected);
         printf("|        Avg. detected =    %d\n", sum_detected / frame_count);
-        printf("| Avg. speed (pixel/s) =    %.2f\n", avg_speed / speeds.size());
+        printf("|    Avg. speed (um/s) =    %.2f\n", avg_speed / speeds.size());
 
         //load next video
         if(maxvideos > 1 && i < maxvideos){
@@ -461,6 +461,8 @@ int main(int argc, char** argv ){
                 new_mc.clear();
             if (areas.size() > 0)
                 areas.clear();
+            if(speeds.size() > 0)
+                speeds.clear();
         }      
     }
 
